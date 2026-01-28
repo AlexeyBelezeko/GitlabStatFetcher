@@ -53,6 +53,8 @@ func main() {
 		log.Fatal("Missing required environment variables: DATA_FOLDER")
 	}
 
+	skipDiscussions := os.Getenv("SKIP_DISCUSSIONS") == "true"
+
 	if err := os.MkdirAll(dataFolder, 0755); err != nil {
 		log.Fatalf("Error creating data directory: %v", err)
 	}
@@ -61,7 +63,6 @@ func main() {
 	fetchedProjects := loadFetchedProjects(dataFolder)
 	log.Printf("Found %d already fetched projects", len(fetchedProjects))
 
-	skipDiscussions := flag.Bool("skip-discussions", false, "Skip fetching merge request discussions")
 	flag.Parse()
 	urls := flag.Args()
 	if len(urls) == 0 {
@@ -98,7 +99,7 @@ func main() {
 		fmt.Printf("Fetching: %s (ID: %d)\n", project.PathWithNamespace, project.ID)
 		fmt.Println(strings.Repeat("=", 80))
 
-		fetchAll(client, project.ID, workersCount, dataFolder, sinceDate, *skipDiscussions)
+		fetchAll(client, project.ID, workersCount, dataFolder, sinceDate, skipDiscussions)
 		markProjectFetched(dataFolder, project.ID, project.PathWithNamespace)
 	}
 
@@ -272,7 +273,7 @@ func fetchAll(client *gitlab.Client, projectID int64, workers int, dataDir strin
 		}
 		notes = fetchDiscussions(client, projectID, mrIIDs, workers)
 	} else {
-		log.Println("Skipping discussions (--skip-discussions flag set)")
+		log.Println("Skipping discussions (SKIP_DISCUSSIONS=true)")
 	}
 
 	log.Println("Writing output files...")
