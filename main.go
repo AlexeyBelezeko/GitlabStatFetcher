@@ -53,6 +53,8 @@ func main() {
 		log.Fatal("Missing required environment variables: DATA_FOLDER")
 	}
 
+	skipDiscussions := os.Getenv("SKIP_DISCUSSIONS") == "true"
+
 	if err := os.MkdirAll(dataFolder, 0755); err != nil {
 		log.Fatalf("Error creating data directory: %v", err)
 	}
@@ -97,7 +99,7 @@ func main() {
 		fmt.Printf("Fetching: %s (ID: %d)\n", project.PathWithNamespace, project.ID)
 		fmt.Println(strings.Repeat("=", 80))
 
-		fetchAll(client, project.ID, workersCount, dataFolder, sinceDate)
+		fetchAll(client, project.ID, workersCount, dataFolder, sinceDate, skipDiscussions)
 		markProjectFetched(dataFolder, project.ID, project.PathWithNamespace)
 	}
 
@@ -256,18 +258,23 @@ func sanitizeFilename(name string) string {
 }
 
 // fetchAll fetches all per user stats.
-func fetchAll(client *gitlab.Client, projectID int64, workers int, dataDir string, sinceDate *time.Time) {
+func fetchAll(client *gitlab.Client, projectID int64, workers int, dataDir string, sinceDate *time.Time, skipDiscussions bool) {
 	startTime := time.Now()
 
 	commits := fetchCommits(client, projectID, workers, sinceDate)
 	mrs := fetchMRs(client, projectID, workers, sinceDate)
 
-	// Extract MR IDs for discussions
-	mrIIDs := make([]int64, len(mrs))
-	for i, mr := range mrs {
-		mrIIDs[i] = mr.IID
+	var notes []*gitlab.Note
+	if !skipDiscussions {
+		// Extract MR IDs for discussions
+		mrIIDs := make([]int64, len(mrs))
+		for i, mr := range mrs {
+			mrIIDs[i] = mr.IID
+		}
+		notes = fetchDiscussions(client, projectID, mrIIDs, workers)
+	} else {
+		log.Println("Skipping discussions (SKIP_DISCUSSIONS=true)")
 	}
-	notes := fetchDiscussions(client, projectID, mrIIDs, workers)
 
 	log.Println("Writing output files...")
 
