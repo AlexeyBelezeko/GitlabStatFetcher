@@ -61,6 +61,7 @@ func main() {
 	fetchedProjects := loadFetchedProjects(dataFolder)
 	log.Printf("Found %d already fetched projects", len(fetchedProjects))
 
+	skipDiscussions := flag.Bool("skip-discussions", false, "Skip fetching merge request discussions")
 	flag.Parse()
 	urls := flag.Args()
 	if len(urls) == 0 {
@@ -97,7 +98,7 @@ func main() {
 		fmt.Printf("Fetching: %s (ID: %d)\n", project.PathWithNamespace, project.ID)
 		fmt.Println(strings.Repeat("=", 80))
 
-		fetchAll(client, project.ID, workersCount, dataFolder, sinceDate)
+		fetchAll(client, project.ID, workersCount, dataFolder, sinceDate, *skipDiscussions)
 		markProjectFetched(dataFolder, project.ID, project.PathWithNamespace)
 	}
 
@@ -256,18 +257,23 @@ func sanitizeFilename(name string) string {
 }
 
 // fetchAll fetches all per user stats.
-func fetchAll(client *gitlab.Client, projectID int64, workers int, dataDir string, sinceDate *time.Time) {
+func fetchAll(client *gitlab.Client, projectID int64, workers int, dataDir string, sinceDate *time.Time, skipDiscussions bool) {
 	startTime := time.Now()
 
 	commits := fetchCommits(client, projectID, workers, sinceDate)
 	mrs := fetchMRs(client, projectID, workers, sinceDate)
 
-	// Extract MR IDs for discussions
-	mrIIDs := make([]int64, len(mrs))
-	for i, mr := range mrs {
-		mrIIDs[i] = mr.IID
+	var notes []*gitlab.Note
+	if !skipDiscussions {
+		// Extract MR IDs for discussions
+		mrIIDs := make([]int64, len(mrs))
+		for i, mr := range mrs {
+			mrIIDs[i] = mr.IID
+		}
+		notes = fetchDiscussions(client, projectID, mrIIDs, workers)
+	} else {
+		log.Println("Skipping discussions (--skip-discussions flag set)")
 	}
-	notes := fetchDiscussions(client, projectID, mrIIDs, workers)
 
 	log.Println("Writing output files...")
 
