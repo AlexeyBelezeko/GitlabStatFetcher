@@ -262,6 +262,9 @@ func fetchAll(client *gitlab.Client, projectID int64, workers int, dataDir strin
 	startTime := time.Now()
 
 	commits := fetchCommits(client, projectID, workers, sinceDate)
+	for _, c := range commits {
+		c.ProjectID = projectID
+	}
 	mrs := fetchMRs(client, projectID, workers, sinceDate)
 
 	var notes []*gitlab.Note
@@ -502,6 +505,7 @@ func fetchCommits(client *gitlab.Client, projectID int64, workers int, sinceData
 func fetchCommitPage(client *gitlab.Client, projectID, page int64, sinceDate *time.Time) []*gitlab.Commit {
 	opts := &gitlab.ListCommitsOptions{
 		WithStats:   gitlab.Ptr(true),
+		All:         gitlab.Ptr(true),
 		ListOptions: gitlab.ListOptions{Page: page, PerPage: 100},
 		Since:       sinceDate,
 	}
