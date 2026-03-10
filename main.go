@@ -121,45 +121,17 @@ func recursivelyFetchProjectFromPath(client *gitlab.Client, path string) ([]*git
 		return nil, fmt.Errorf("error fetching group: %v", err)
 	}
 
-	listSubgroupsOpts := &gitlab.ListSubGroupsOptions{
-		ListOptions: gitlab.ListOptions{
-			PerPage: 100,
-			Page:    1,
-		},
-	}
-
-	var allProjects []*gitlab.Project
-	for {
-		groups, resp, err := client.Groups.ListSubGroups(group.ID, listSubgroupsOpts)
-		if err != nil {
-			return nil, fmt.Errorf("error fetching list subgroups: %v", err)
-		}
-
-		for _, subgroup := range groups {
-			subgroupProjects, err := listGroupProjects(client, subgroup.ID)
-			if err != nil {
-				return nil, fmt.Errorf("error fetching list subgroup projects: %v", err)
-			}
-			allProjects = append(allProjects, subgroupProjects...)
-		}
-
-		if resp.CurrentPage >= resp.TotalPages {
-			break
-		}
-		listSubgroupsOpts.Page = resp.NextPage
-	}
-
-	groupProjects, err := listGroupProjects(client, group.ID)
+	allProjects, err := listAllProjectsRecursive(client, group.ID)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching list group projects: %v", err)
+		return nil, err
 	}
-	allProjects = append(allProjects, groupProjects...)
 
 	return allProjects, nil
 }
 
 func listGroupProjects(client *gitlab.Client, groupID int64) ([]*gitlab.Project, error) {
 	listProjectsOpts := &gitlab.ListGroupProjectsOptions{
+		Archived: gitlab.Ptr(false),
 		ListOptions: gitlab.ListOptions{
 			PerPage: 100,
 			Page:    1,
@@ -177,6 +149,37 @@ func listGroupProjects(client *gitlab.Client, groupID int64) ([]*gitlab.Project,
 			break
 		}
 		listProjectsOpts.Page = resp.NextPage
+	}
+	return allProjects, nil
+}
+
+func listAllProjectsRecursive(client *gitlab.Client, groupID int64) ([]*gitlab.Project, error) {
+	// Projects directly in this group
+	allProjects, err := listGroupProjects(client, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching projects for group %d: %v", groupID, err)
+	}
+
+	// Recurse into subgroups
+	opts := &gitlab.ListSubGroupsOptions{
+		ListOptions: gitlab.ListOptions{PerPage: 100, Page: 1},
+	}
+	for {
+		subgroups, resp, err := client.Groups.ListSubGroups(groupID, opts)
+		if err != nil {
+			return nil, fmt.Errorf("error fetching subgroups for group %d: %v", groupID, err)
+		}
+		for _, sg := range subgroups {
+			sgProjects, err := listAllProjectsRecursive(client, sg.ID)
+			if err != nil {
+				return nil, err
+			}
+			allProjects = append(allProjects, sgProjects...)
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
 	}
 	return allProjects, nil
 }
